@@ -37,22 +37,22 @@ class PostgreSQLStorage extends AbstractSQLStorage {
         if (versioning) {
             this.versionsTableName = "versions_" + mainTableName
         }
-        UPSERT_DOCUMENT = "WITH upsert AS (UPDATE $mainTableName SET data = ?, dataset = ?, modified = ?, entry = ?, meta = ? WHERE identifier = ? RETURNING *) " +
-            "INSERT INTO {tableName} (identifier, data, dataset, modified, entry, meta) SELECT ?,?,?,?,?,? WHERE NOT EXISTS (SELECT * FROM upsert)"
+        UPSERT_DOCUMENT = "WITH upsert AS (UPDATE $mainTableName SET data = ?, entry = ?, ts = ?, deleted = ? WHERE identifier = ? RETURNING *) " +
+            "INSERT INTO {tableName} (identifier, data, entry, ts, deleted) SELECT ?,?,?,?,? WHERE NOT EXISTS (SELECT * FROM upsert)"
 
 
-        INSERT_DOCUMENT_VERSION = "INSERT INTO $versionsTableName (identifier,data,checksum,modified,entry,meta) SELECT ?,?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM $versionsTableName WHERE identifier = ? AND checksum = ?)"
+        INSERT_DOCUMENT_VERSION = "INSERT INTO $versionsTableName (identifier,data,checksum,ts,entry) SELECT ?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM $versionsTableName WHERE identifier = ? AND checksum = ?)"
 
-        GET_DOCUMENT = "SELECT identifier,data,entry,meta FROM $mainTableName WHERE identifier = ?"
-        GET_DOCUMENT_VERSION = "SELECT identifier,data,entry,meta FROM $versionsTableName WHERE identifier = ? AND checksum = ?"
-        GET_ALL_DOCUMENT_VERSIONS = "SELECT identifier,data,entry,meta FROM $versionsTableName WHERE identifier = ? ORDER BY modified"
-        GET_DOCUMENT_BY_ALTERNATE_ID = "SELECT identifier,data,entry,meta FROM $mainTableName WHERE entry @> '{ \"alternateIdentifiers\": [?] }'"
-        LOAD_ALL_STATEMENT = "SELECT identifier,data,entry,meta FROM $mainTableName WHERE modified >= ? AND modified <= ? AND identifier != ?  ORDER BY modified LIMIT 2000"
-        LOAD_ALL_STATEMENT_WITH_DATASET = "SELECT identifier,data,entry,meta FROM $mainTableName WHERE modified >= ? AND modified <= ? AND identifier != ? AND dataset = ? ORDER BY modified LIMIT 2000"
-        LOAD_ALL_DOCUMENTS = "SELECT identifier,data,entry,meta FROM $mainTableName WHERE modified >= ? AND modified <= ? ORDER BY modified"
-        LOAD_ALL_DOCUMENTS_BY_DATASET = "SELECT identifier,data,entry,meta FROM $mainTableName WHERE dataset = ? AND modified >= ? AND modified <= ? ORDER BY modified"
+        GET_DOCUMENT = "SELECT identifier,data,entry,deleted FROM $mainTableName WHERE identifier = ?"
+        GET_DOCUMENT_VERSION = "SELECT identifier,data,entry,deleted FROM $versionsTableName WHERE identifier = ? AND checksum = ?"
+        GET_ALL_DOCUMENT_VERSIONS = "SELECT identifier,data,entry FROM $versionsTableName WHERE identifier = ? ORDER BY ts"
+        GET_DOCUMENT_BY_ALTERNATE_ID = "SELECT identifier,data,entry FROM $mainTableName WHERE entry @> '{ \"alternateIdentifiers\": [?] }'"
+        LOAD_ALL_STATEMENT = "SELECT identifier,data,entry FROM $mainTableName WHERE ts >= ? AND ts <= ? AND identifier != ?  ORDER BY ts"
+        LOAD_ALL_STATEMENT_WITH_DATASET = "SELECT identifier,data,entry FROM $mainTableName WHERE ts >= ? AND ts <= ? AND identifier != ? AND dataset = ? ORDER BY ts"
+        LOAD_ALL_DOCUMENTS = "SELECT identifier,data,entry FROM $mainTableName WHERE ts >= ? AND ts <= ? ORDER BY ts"
+        LOAD_ALL_DOCUMENTS_BY_DATASET = "SELECT identifier,data,entry FROM $mainTableName WHERE ts >= ? AND ts <= ? AND entry @> '{ \"dataset\": \"{dataset}\" }' ORDER BY ts"
         LOAD_ALL_DOCUMENTS_WITH_LINKS = """
-            SELECT l.id as parent, r.identifier as identifier, r.data as data, r.entry as entry, r.meta as meta
+            SELECT l.id as parent, r.identifier as identifier, r.data as data, r.entry as entry
             FROM (
                 SELECT * FROM (
                     SELECT identifier as id, identifier as link FROM $mainTableName
@@ -62,7 +62,7 @@ class PostgreSQLStorage extends AbstractSQLStorage {
             ) l JOIN $mainTableName r ON l.link = r.identifier ORDER BY l.id
             """
         LOAD_ALL_DOCUMENTS_WITH_LINKS_BY_DATASET = """
-            SELECT l.id as parent, r.identifier as identifier, r.data as data, r.entry as entry, r.meta as meta
+            SELECT l.id as parent, r.identifier as identifier, r.data as data, r.entry as entry
             FROM (
                 SELECT * FROM (
                     SELECT identifier as id, identifier as link FROM $mainTableName WHERE dataset = ?
@@ -81,20 +81,22 @@ class PostgreSQLStorage extends AbstractSQLStorage {
         Statement stmt = connection.createStatement();
         stmt.executeUpdate("CREATE TABLE IF NOT EXISTS $mainTableName ("
             +"identifier text primary key,"
-            +"data bytea,"
-            +"dataset text not null,"
-            +"modified timestamp,"
-            +"entry jsonb,"
-            +"meta jsonb"
+            +"data jsonb not null,"
+            +"ts timestamp with time zone not null default now(),"
+            +"entry jsonb not null,"
+            +"deleted boolean not null default false"
             +")");
         availableTypes.each {
             log.debug("Creating child table $it")
             def result = stmt.executeUpdate("CREATE TABLE IF NOT EXISTS ${mainTableName}_${it} ("
-                    +"CHECK (dataset = '${it}'), PRIMARY KEY (identifier) ) INHERITS (${mainTableName})")
+                    +"CHECK (entry->>'dataset' = '${it}'), PRIMARY KEY (identifier) ) INHERITS (${mainTableName})")
             log.debug("Creating indexes for $it")
             try {
-                stmt.executeUpdate("CREATE INDEX ${mainTableName}_${it}_dataset ON ${mainTableName}_${it} (dataset)")
-                stmt.executeUpdate("CREATE INDEX ${mainTableName}_${it}_modified ON ${mainTableName}_${it} (modified)")
+                stmt.executeUpdate("CREATE INDEX idx_${mainTableName}_${it}_dataset ON ${mainTableName}_${it} (entry->>'dataset')")
+                stmt.executeUpdate("CREATE INDEX idx_${mainTableName}_${it}_ts ON ${mainTableName}_${it} (ts)")
+                stmt.executeUpdate("CREATE INDEX idx_${mainTableName}_${it}_alive ON ${mainTableName}_${it} (identifier) WHERE deleted is not true")
+                stmt.executeUpdate("CREATE INDEX idx_${mainTableName}_${it}_entry ON ${mainTableName}_${it} USING gin (entry jsonb_path_ops)")
+                stmt.executeUpdate("CREATE INDEX idx_${mainTableName}_${it}_data ON ${mainTableName}_${it} USING gin (data)")
             } catch (org.postgresql.util.PSQLException pgsqle) {
                 log.trace("Indexes on $mainTableName / $id already exists.")
             }
@@ -103,24 +105,20 @@ class PostgreSQLStorage extends AbstractSQLStorage {
             stmt.executeUpdate("CREATE TABLE IF NOT EXISTS $versionsTableName ("
                 +"id serial,"
                 +"identifier text not null,"
-                +"data bytea,"
+                +"data jsonb not null,"
+                +"entry jsonb not null,"
                 +"checksum char(32) not null,"
-                +"modified timestamp,"
-                +"entry jsonb,"
-                +"meta jsonb,"
+                +"ts timestamp with timezone not null default now(),"
                 +"UNIQUE (identifier, checksum)"
                 +")");
             try {
                 stmt.executeUpdate("CREATE INDEX ${versionsTableName}_identifier ON ${versionsTableName} (identifier)")
-                stmt.executeUpdate("CREATE INDEX ${versionsTableName}_modified ON ${versionsTableName} (modified)")
+                stmt.executeUpdate("CREATE INDEX ${versionsTableName}_ts ON ${versionsTableName} (ts)")
                 stmt.executeUpdate("CREATE INDEX ${versionsTableName}_checksum ON ${versionsTableName} (checksum)")
             } catch (org.postgresql.util.PSQLException pgsqle) {
                 log.trace("Indexes on $mainTableName / $id already exists.")
             }
         }
-        /*
-        stmt.close()
-        */
         connection.close()
     }
 
@@ -138,27 +136,22 @@ class PostgreSQLStorage extends AbstractSQLStorage {
         Connection connection = connectionPool.getConnection()
         PreparedStatement insert = connection.prepareStatement(UPSERT_DOCUMENT.replaceAll(/\{tableName\}/, mainTableName + "_" + doc.dataset))
         try {
-            insert.setBytes(1, doc.data)
-            insert.setString(2, doc.dataset)
+            insert.setObject(1, doc.dataAsJson, java.sql.Types.OTHER)
+            insert.setObject(2, doc.entryAsJson, java.sql.Types.OTHER)
             insert.setTimestamp(3, new Timestamp(doc.modified))
-            insert.setObject(4, doc.entryAsJson, java.sql.Types.OTHER)
-            insert.setObject(5, doc.metaAsJson, java.sql.Types.OTHER)
+            insert.setBoolean(4, doc.deleted)
+            insert.setString(5, doc.identifier)
             insert.setString(6, doc.identifier)
-            insert.setString(7, doc.identifier)
-            insert.setBytes(8, doc.data)
-            insert.setString(9, doc.dataset)
-            insert.setTimestamp(10, new Timestamp(doc.modified))
-            insert.setObject(11, doc.entryAsJson, java.sql.Types.OTHER)
-            insert.setObject(12, doc.metaAsJson, java.sql.Types.OTHER)
+            insert.setObject(7, doc.dataAsJson, java.sql.Types.OTHER)
+            insert.setObject(8, doc.entryAsJson, java.sql.Types.OTHER)
+            insert.setTimestamp(9, new Timestamp(doc.modified))
+            insert.setBoolean(10, doc.deleted)
             insert.executeUpdate()
             return true
         } catch (Exception e) {
             log.error("Failed to save document: ${e.message}")
             throw e
         } finally {
-            /*
-            insert.close()
-            */
             connection.close()
             log.debug("[store] Closed connection.")
         }
@@ -173,13 +166,12 @@ class PostgreSQLStorage extends AbstractSQLStorage {
         try {
             log.debug("Trying to save a version of ${doc.identifier} with checksum ${doc.checksum}. Modified: ${doc.modified}")
             insvers.setString(1, doc.identifier)
-            insvers.setBytes(2, doc.data)
+            insvers.setObject(2, doc.dataAsJson, java.sql.Types.OTHER)
             insvers.setString(3, doc.checksum)
             insvers.setTimestamp(4, new Timestamp(doc.modified))
             insvers.setObject(5, doc.entryAsJson, java.sql.Types.OTHER)
-            insvers.setObject(6, doc.metaAsJson, java.sql.Types.OTHER)
-            insvers.setString(7, doc.identifier)
-            insvers.setString(8, doc.checksum)
+            insvers.setString(6, doc.identifier)
+            insvers.setString(7, doc.checksum)
             int updated =  insvers.executeUpdate()
             log.debug("${updated > 0 ? 'New version saved.' : 'Already had same version'}")
             return (updated > 0)
@@ -187,9 +179,6 @@ class PostgreSQLStorage extends AbstractSQLStorage {
             log.error("Failed to save document version: ${e.message}")
             throw e
         } finally {
-            /*
-            insvers.close()
-            */
             connection.close()
             log.debug("[saveVersion] Closed connection.")
         }
@@ -209,28 +198,24 @@ class PostgreSQLStorage extends AbstractSQLStorage {
             docs.each { doc ->
                 if (versioning) {
                     ver_batch.setString(1, doc.identifier)
-                    ver_batch.setBytes(2, doc.data)
+                    ver_batch.setObject(2, doc.dataAsJson, java.sql.Types.OTHER)
                     ver_batch.setString(3, doc.checksum)
                     ver_batch.setTimestamp(4, new Timestamp(doc.modified))
                     ver_batch.setObject(5, doc.entryAsJson, java.sql.Types.OTHER)
-                    ver_batch.setObject(6, doc.metaAsJson, java.sql.Types.OTHER)
-                    ver_batch.setString(7, doc.identifier)
-                    ver_batch.setString(8, doc.checksum)
+                    ver_batch.setString(6, doc.identifier)
+                    ver_batch.setString(7, doc.checksum)
                     ver_batch.addBatch()
                 }
-
-                batch.setBytes(1, doc.data)
-                batch.setString(2, doc.dataset)
+                batch.setObject(1, doc.dataAsJson, java.sql.Types.OTHER)
+                batch.setObject(2, doc.entryAsJson, java.sql.Types.OTHER)
                 batch.setTimestamp(3, new Timestamp(doc.modified))
-                batch.setObject(4, doc.entryAsJson, java.sql.Types.OTHER)
-                batch.setObject(5, doc.metaAsJson, java.sql.Types.OTHER)
+                batch.setBoolean(4, doc.deleted)
+                batch.setString(5, doc.identifier)
                 batch.setString(6, doc.identifier)
-                batch.setString(7, doc.identifier)
-                batch.setBytes(8, doc.data)
-                batch.setString(9, doc.dataset)
-                batch.setTimestamp(10, new Timestamp(doc.modified))
-                batch.setObject(11, doc.entryAsJson, java.sql.Types.OTHER)
-                batch.setObject(12, doc.metaAsJson, java.sql.Types.OTHER)
+                batch.setObject(7, doc.dataAsJson, java.sql.Types.OTHER)
+                batch.setObject(8, doc.entryAsJson, java.sql.Types.OTHER)
+                batch.setTimestamp(9, new Timestamp(doc.modified))
+                batch.setBoolean(10, doc.deleted)
                 batch.addBatch()
             }
             ver_batch.executeBatch()
@@ -240,10 +225,6 @@ class PostgreSQLStorage extends AbstractSQLStorage {
             log.error("Failed to save batch: ${e.message}")
             throw e
         } finally {
-            /*
-            batch.close()
-            ver_batch.close()
-            */
             connection.close()
             log.debug("[bulkStore] Closed connection.")
         }
@@ -298,17 +279,11 @@ class PostgreSQLStorage extends AbstractSQLStorage {
             rs = selectstmt.executeQuery()
             log.trace("Executed.")
             if (rs.next()) {
-                doc = whelk.createDocument(rs.getBytes("data"), mapper.readValue(rs.getString("entry"), Map), mapper.readValue(rs.getString("meta"), Map))
+                doc = whelk.createDocument(mapper.readValue(rs.getString("data"), Map), mapper.readValue(rs.getString("entry"), Map))
             } else {
                 log.trace("No results returned for get($id)")
             }
         } finally {
-            if (rs) {
-                rs.close()
-            }
-            if (selectstmt) {
-                selectstmt.close()
-            }
             connection.close()
             log.debug("[loadFromSql] Closed connection.")
         }
@@ -333,15 +308,11 @@ class PostgreSQLStorage extends AbstractSQLStorage {
             rs = selectstmt.executeQuery()
             int v = 0
             while (rs.next()) {
-                def doc = whelk.createDocument(rs.getBytes("data"), mapper.readValue(rs.getString("entry"), Map), mapper.readValue(rs.getString("meta"), Map))
+                def doc = whelk.createDocument(mapper.readValue(rs.getString("data"), Map), mapper.readValue(rs.getString("entry"), Map))
                 doc.version = v++
                 docList << doc
             }
         } finally {
-            /*
-            rs.close()
-            selectstmt.close()
-            */
             connection.close()
             log.debug("[loadAllVersions] Closed connection.")
         }
@@ -354,7 +325,7 @@ class PostgreSQLStorage extends AbstractSQLStorage {
     }
 
     private Iterable<Document> loadAllDocuments(String dataset, boolean withLinks, Date since = null, Date until = null) {
-        log.debug("Load all called with dataset: $dataset")
+        log.debug("Load all called with dataset: ${dataset}. withLinks: $withLinks")
         return new Iterable<Document>() {
             Iterator<Document> iterator() {
                 Connection connection = connectionPool.getConnection()
@@ -367,7 +338,7 @@ class PostgreSQLStorage extends AbstractSQLStorage {
                     if (withLinks) {
                         loadAllStatement = connection.prepareStatement(LOAD_ALL_DOCUMENTS_WITH_LINKS_BY_DATASET)
                     } else {
-                        loadAllStatement = connection.prepareStatement(LOAD_ALL_DOCUMENTS_BY_DATASET)
+                        loadAllStatement = connection.prepareStatement(LOAD_ALL_DOCUMENTS_BY_DATASET.replaceAll(/\{dataset\}/, dataset))
                     }
                 } else {
                     if (withLinks) {
@@ -377,17 +348,13 @@ class PostgreSQLStorage extends AbstractSQLStorage {
                     }
                 }
                 loadAllStatement.setFetchSize(100)
+                loadAllStatement.setTimestamp(1, new Timestamp(sinceTS))
+                loadAllStatement.setTimestamp(2, new Timestamp(untilTS))
+
                 if (dataset) {
-                    loadAllStatement.setString(1, dataset)
                     if (withLinks) {
-                        loadAllStatement.setString(2, dataset)
-                    } else {
-                        loadAllStatement.setTimestamp(2, new Timestamp(sinceTS))
-                        loadAllStatement.setTimestamp(3, new Timestamp(untilTS))
+                        loadAllStatement.setString(3, dataset)
                     }
-                } else {
-                    loadAllStatement.setTimestamp(1, new Timestamp(sinceTS))
-                    loadAllStatement.setTimestamp(2, new Timestamp(untilTS))
                 }
                 ResultSet rs = loadAllStatement.executeQuery()
 
@@ -404,12 +371,7 @@ class PostgreSQLStorage extends AbstractSQLStorage {
                 return new Iterator<Document>() {
                     @Override
                     public Document next() {
-                        Document doc
-                        if (withLinks) {
-                            doc = whelk.createDocument(rs.getBytes("data"), mapper.readValue(rs.getString("entry"), Map), mapper.readValue(rs.getString("meta"), Map), rs.getString("parent"))
-                        } else {
-                            doc = whelk.createDocument(rs.getBytes("data"), mapper.readValue(rs.getString("entry"), Map), mapper.readValue(rs.getString("meta"), Map))
-                        }
+                        Document doc = whelk.createDocument(mapper.readValue(rs.getString("data"), Map), mapper.readValue(rs.getString("entry"), Map))
                         more = rs.next()
                         if (!more) {
                             try {
@@ -431,67 +393,6 @@ class PostgreSQLStorage extends AbstractSQLStorage {
         }
     }
 
-    Iterable<Document> oldloadAll(String dataset, Date since = null, Date until = null) {
-        log.debug("Load all called with dataset: $dataset")
-        return new Iterable<Document>() {
-            def results = new LinkedHashSet<Document>()
-            Iterator<Document> iterator() {
-                Iterator listIterator = null
-                Connection connection = connectionPool.getConnection()
-                PreparedStatement loadAllStatement
-                long untilTS = until?.getTime() ?: PGStatement.DATE_POSITIVE_INFINITY
-
-                if (dataset) {
-                    loadAllStatement = connection.prepareStatement(LOAD_ALL_STATEMENT_WITH_DATASET)
-                } else {
-                    loadAllStatement = connection.prepareStatement(LOAD_ALL_STATEMENT)
-                }
-
-                return new Iterator<Document>() {
-                    long lastModified = since?.getTime() ?: 0L
-                    String lastIdentifier = ''
-                    int nums = 0
-
-                    public boolean hasNext() {
-                        if (results.isEmpty()) {
-                            log.debug("Getting results from postgres")
-                            listIterator = null
-                            loadAllStatement.setTimestamp(1, new Timestamp(lastModified))
-                            loadAllStatement.setTimestamp(2, new Timestamp(untilTS))
-                            loadAllStatement.setString(3, lastIdentifier)
-                            if (dataset) {
-                                loadAllStatement.setString(4, dataset)
-                            }
-                            ResultSet rs = loadAllStatement.executeQuery()
-                            while (rs.next()) {
-                                def doc = whelk.createDocument(rs.getBytes("data"), mapper.readValue(rs.getString("entry"), Map), mapper.readValue(rs.getString("meta"), Map))
-                                lastModified = doc.modified
-                                lastIdentifier = doc.identifier
-                                results << doc
-                            }
-                            log.debug("Number of results in list: ${results.size()}")
-                            listIterator = results.iterator()
-                        }
-                        return !results.isEmpty()
-                    }
-                    public Document next() {
-                        if (listIterator == null) {
-                            listIterator = results.iterator()
-                        }
-                        Document d = listIterator.next()
-                        if (!listIterator.hasNext()) {
-                            listIterator = null
-                            results = new LinkedHashSet<Document>()
-                        }
-                        log.trace("Got document ${d?.identifier}")
-                        return d
-                    }
-                    public void remove() { throw new UnsupportedOperationException(); }
-                }
-            }
-        }
-    }
-
     @Override
     void remove(String identifier, String dataset) {
         if (versioning) {
@@ -504,9 +405,6 @@ class PostgreSQLStorage extends AbstractSQLStorage {
                 delstmt.setString(1, identifier)
                 delstmt.executeUpdate()
             } finally {
-                /*
-                delstmt.close()
-                */
                 connection.close()
                 log.debug("[remove] Closed connection.")
             }

@@ -449,14 +449,23 @@ class StandardWhelk implements Whelk {
     }
 
     @Override
-    Document createDocument(byte[] data, Map entry, Map meta) {
-        Document document = new DefaultDocument().withData(data).withMeta(meta).withEntry(entry)
+    Document createDocument(byte[] data, Map entry) {
+        Document document = new DefaultDocument().withEntry(entry).withData(data)
         if (document.isJson()) {
             if (document.contentType == "application/ld+json") {
                 return new JsonLdDocument().fromDocument(document)
             } else {
                 return new JsonDocument().fromDocument(document)
             }
+        }
+        return document
+    }
+
+    @Override
+    Document createDocument(Map data, Map entry) {
+        Document document = new JsonDocument().withEntry(entry).withData(data)
+        if (document.contentType == "application/ld+json") {
+            return new JsonLdDocument().fromDocument(document)
         }
         return document
     }

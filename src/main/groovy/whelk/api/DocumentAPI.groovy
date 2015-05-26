@@ -184,7 +184,7 @@ class DocumentAPI extends BasicAPI {
                     if (versions) {
                         d.entry.versions = versions
                     }
-                    sendResponse(response, d.metadataAsJson, "application/json")
+                    sendResponse(response, d.entryAsJson, "application/json")
                 } else {
                     def ctheader = contextHeaders.get(path.split("/")[1])
                     if (ctheader) {
@@ -214,7 +214,7 @@ class DocumentAPI extends BasicAPI {
                 throw new WhelkRuntimeException("PUT requires a proper URI.")
             }
             def entry = [:]
-            def meta = [:]
+            def meta = null
             Document existingDoc = null
 
             if (identifierSupplied) {
@@ -229,7 +229,7 @@ class DocumentAPI extends BasicAPI {
                     }
                     entry = existingDoc.entry
                     entry.remove("deleted")
-                    meta = existingDoc.meta
+                    meta = existingDoc.entry.get(Document.EXTRADATA_KEY, [:])
                 }
                 else {
                     entry['identifier'] = path
@@ -247,10 +247,11 @@ class DocumentAPI extends BasicAPI {
             if (request.getParameterMap()) {
                 meta = request.getParameterMap()
                 log.debug("Setting meta from parameter map: $meta")
+                entry.put(Document.EXTRADATA_KEY, meta)
             }
 
             try {
-                Document doc = whelk.createDocument(entry["contentType"]).withMetaEntry(["entry":entry,"meta":meta]).withData(request.getInputStream().getBytes())
+                Document doc = whelk.createDocument(entry["contentType"]).withEntry(entry).withData(request.getInputStream().getBytes())
 
                 if (!hasPermission(request.getAttribute("user"), doc, existingDoc)) {
                     response.setStatus(HttpServletResponse.SC_FORBIDDEN, "You do not have sufficient privileges to perform this operation.")

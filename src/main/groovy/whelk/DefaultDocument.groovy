@@ -21,22 +21,18 @@ import whelk.exception.*
 @Log
 class DefaultDocument implements Document {
     protected byte[] data = new byte[0]
-    Map entry = [:] // For "technical" metadata about the record, such as contentType, created, etc.
-    Map meta  = [:] // For extra metadata about the object, e.g. links and such.
+    Map entry = [:]
 
     @JsonIgnore
     private Set<String> identifiers = new LinkedHashSet<String>()
     @JsonIgnore
-    private Set<String> datasets = new LinkedHashSet<String>()
-    private String checksum = null
+    private Set<String> types = new LinkedHashSet<String>()
 
     @JsonIgnore
     static final ObjectMapper mapper = new ObjectMapper()
 
     DefaultDocument() {
-        log.trace("### NEW DOCUMENT INSTANTIATED")
         entry = [:]
-        meta = [:]
         setCreated(new Date().getTime())
     }
 
@@ -53,10 +49,10 @@ class DefaultDocument implements Document {
     }
 
     @JsonIgnore
-    List<String> getDatasets() {
-        def dsList = [getDataset()]
-        dsList.addAll(datasets)
-        return dsList
+    List<String> getTypes() {
+        def tList = []
+        tList.addAll(types)
+        return tList
     }
 
     @JsonIgnore
@@ -65,7 +61,7 @@ class DefaultDocument implements Document {
     }
 
     @JsonIgnore
-    String getChecksum() { checksum }
+    String getChecksum() { return entry.get("checksum") }
 
     String toJson() {
         log.trace("Serializing document.")
@@ -89,18 +85,8 @@ class DefaultDocument implements Document {
     }
 
     @JsonIgnore
-    String getMetadataAsJson() {
-        log.trace("For $identifier. Meta is: $meta, entry is: $entry")
-        return mapper.writeValueAsString(["identifier":identifier, "meta":meta, "entry":entry])
-    }
-
-    @JsonIgnore
     String getEntryAsJson() {
         return mapper.writeValueAsString(entry)
-    }
-    @JsonIgnore
-    String getMetaAsJson() {
-        return mapper.writeValueAsString(meta)
     }
 
     @JsonIgnore
@@ -141,16 +127,13 @@ class DefaultDocument implements Document {
     }
 
     protected void setCreated(long ts) {
-        log.trace("Setting created ts $ts")
         this.entry[CREATED_KEY] = ts
-        this.entry["timestamp"] = ts // Hack to prevent _timestamp-errors in older elastic mappings. Safe to remove once all indexes are up to date.
         if (getModified() < 1) {
             this.entry[MODIFIED_KEY] = ts
         }
     }
 
     void setModified(long mt) {
-        log.trace("Updating modified for ${this.identifier} to ${mt}")
         this.entry[MODIFIED_KEY] = mt
     }
 
@@ -161,7 +144,7 @@ class DefaultDocument implements Document {
     void setData(byte[] data, boolean calcChecksum = true) {
         this.data = data
         if (calcChecksum) {
-            calculateChecksum(this.data, meta.toString().getBytes())
+            calculateChecksum(this.data, entry.get(EXTRADATA_KEY, [:]).toString().getBytes())
         }
     }
 
@@ -174,9 +157,9 @@ class DefaultDocument implements Document {
         entry["alternateIdentifiers"] = identifiers
     }
 
-    void addDataset(String ds) {
-        datasets = ds
-        entry["alternateDatasets"] = datasets
+    void addType(String t) {
+        types.add(t)
+        entry.put(TYPES_KEY, types)
     }
 
     /*
@@ -253,11 +236,11 @@ class DefaultDocument implements Document {
         if (entrydata?.containsKey(CONTENT_TYPE_KEY)) {
             setContentType(entrydata.get(CONTENT_TYPE_KEY))
         }
-        if (entrydata?.containsKey("alternateIdentifiers")) {
-            this.identifiers = entrydata.get("alternateIdentifiers")
+        if (entrydata?.containsKey(ALT_IDENTS_KEY)) {
+            this.identifiers = entrydata.get(ALT_IDENTS_KEY)
         }
-        if (entrydata?.containsKey("alternateDatasets")) {
-            this.datasets = entrydata.get("alternateDatasets")
+        if (entrydata?.containsKey(TYPES_KEY)) {
+            this.types = entrydata.get(TYPES_KEY)
         }
         if (entrydata != null) {
             this.entry.putAll(entrydata)
@@ -267,40 +250,13 @@ class DefaultDocument implements Document {
         }
         return this
     }
-    Document withMeta(Map metadata) {
-        if (metadata != null) {
-            this.meta = [:]
-            this.meta.putAll(metadata)
-            calculateChecksum(this.data, this.meta.toString().getBytes())
-        }
-        return this
-    }
-
-    Document setMetaEntry(Map metaEntry) {
-        setEntry(metaEntry.entry)
-        withMeta(metaEntry.meta)
-    }
-
-    Document withMetaEntry(Map metaEntry) {
-        withEntry(metaEntry.entry)
-        withMeta(metaEntry.meta)
-        if (metaEntry.data) {
-            withData(metaEntry.data)
-        }
-        return this
-    }
-
     /**
      * Expects a JSON string containing meta and entry as dictionaries.
-     * It's the reverse of getMetadataAsJson().
+     * It's the reverse of getEntryAsJson().
      */
-    Document withMetaEntry(String jsonEntry) {
-        Map metaEntry = mapper.readValue(jsonEntry, Map)
-        return withMetaEntry(metaEntry)
-    }
-
-    Document withMetaEntry(File entryFile) {
-        return withMetaEntry(entryFile.getText("utf-8"))
+    Document withEntryAsJson(String jsonEntry) {
+        Map entry = mapper.readValue(jsonEntry, Map)
+        return withEntry(entry)
     }
 
     @JsonIgnore
@@ -314,7 +270,6 @@ class DefaultDocument implements Document {
     }
 
     protected void calculateChecksum(byte[] databytes, byte[] metabytes) {
-        checksum = null
         MessageDigest m = MessageDigest.getInstance("MD5")
         m.reset()
         //byte[] metabytes = meta.toString().getBytes()
@@ -326,7 +281,6 @@ class DefaultDocument implements Document {
         BigInteger bigInt = new BigInteger(1,digest)
         String hashtext = bigInt.toString(16)
         log.debug("calculated checksum: $hashtext")
-        this.checksum = hashtext
         this.entry['checksum'] = hashtext
     }
 }

@@ -23,7 +23,6 @@ class JsonDocument extends DefaultDocument {
     JsonDocument fromDocument(Document otherDocument) {
         log.trace("Creating json document from other document.")
         setEntry(otherDocument.getEntry())
-        setMeta(otherDocument.getMeta())
         setData(otherDocument.getData())
         return this
     }
@@ -61,6 +60,12 @@ class JsonDocument extends DefaultDocument {
         }
         return serializedDataInMap
     }
+
+    @JsonIgnore
+    String getDataAsJson() {
+        return mapper.writeValueAsString(getDataAsMap())
+    }
+
     @Override
     String toJson() {
         log.trace("Refresing jsondata")

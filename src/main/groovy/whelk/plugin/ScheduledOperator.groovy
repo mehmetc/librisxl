@@ -115,7 +115,6 @@ class ScheduledJob implements Runnable {
             whelkState.put("lastRunNrImported", result.numberOfDocuments)
             whelkState.put("lastRun", new Date().format(DATE_FORMAT))
             whelk.updateState(dataset, whelkState)
-
         } catch (Exception e) {
             log.error("Something failed: ${e.message}", e)
         } finally {

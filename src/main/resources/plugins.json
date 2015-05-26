@@ -684,7 +684,7 @@
             "availableTypes": "_property:AVAILABLE_TYPES",
             "databaseUrl": "_property:DATABASE_URL",
             "contentTypes": ["application/ld+json"],
-            "versioning" : true
+            "versioning" : false
         }
     },
     "jsonldstorage": {

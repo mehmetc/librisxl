@@ -35,7 +35,8 @@ public interface Whelk {
     // Document creation
     public Document createDocument(String contentType);
     public Document createDocumentFromJson(String jsonData);
-    public Document createDocument(byte[] data, Map documentEntry, Map documentMeta);
+    public Document createDocument(byte[] data, Map documentEntry);
+    public Document createDocument(Map data, Map entry);
 
     // maintenance
     public String getId(); // Whelk ID
