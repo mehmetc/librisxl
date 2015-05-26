@@ -36,7 +36,7 @@ class JsonLDLinkCompleterFilter extends BasicFilter implements WhelkAware {
         def byType = [:]
         def byIdOrSameAs = [:]
         def relatedItemsIndex = [byType: byType, byIdOrSameAs: byIdOrSameAs]
-        def oaipmhSetSpecs = doc.meta.get("oaipmhSetSpecs") ?: []
+        def oaipmhSetSpecs = doc.entry.get(Document.EXTRADATA_KEY, [:]).get("oaipmhSetSpecs") ?: []
         for (spec in oaipmhSetSpecs) {
             log.trace("Doc has link to ${spec}")
             if (spec.startsWith("authority:")) {

@@ -62,7 +62,7 @@ class ReindexProcessor extends BasicPlugin implements Processor {
                         msg.setHeader("document:metaentry", document.entry.inspect())
                         msg.setHeader("document:identifier", document.identifier)
                         msg.setHeader("document:dataset", document.dataset)
-                        msg.setHeader("document:metaentry", document.metadataAsJson)
+                        msg.setHeader("document:metaentry", document.entryAsJson)
                         msg.setHeader("whelk:operation", Whelk.BULK_ADD_OPERATION)
                         msg.setBody(document.dataAsMap, Map)
 

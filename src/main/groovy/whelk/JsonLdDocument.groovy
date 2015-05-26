@@ -9,9 +9,9 @@ class JsonLdDocument extends JsonDocument {
     final static String ID_KEY = "@id"
 
     protected List<String> findLinks(Map dataMap) {
-        List<String> ids = []
+        Set<String> ids = new HashSet<String>()
         for (entry in dataMap) {
-            if (entry.key == ID_KEY && entry.value != identifier) {
+            if (entry.key == ID_KEY && ![identifier, thingId].contains(entry.value)) {
                 ids.add(entry.value)
             } else if (entry.value instanceof Map) {
                 ids.addAll(findLinks(entry.value))
@@ -23,15 +23,21 @@ class JsonLdDocument extends JsonDocument {
                 }
             }
         }
-        return ids
+        return ids as List
+    }
+
+    public String getThingId() {
+        return "/resource"+identifier
     }
 
     void setData(byte[] data) {
         super.setData(data)
         def links = findLinks(getDataAsMap())
-        //log.info("For ${identifier}, found links: ${links}")
+        log.info("For ${identifier}, found links: ${links}")
         if (links) {
             this.entry['links'] = links
         }
     }
+
+
 }

@@ -132,7 +132,7 @@ class PostgreSQLStorage extends AbstractSQLStorage {
         }
         assert doc.dataset
         log.debug("Saving document ${doc.identifier} (with checksum: ${doc.checksum})")
-        displayConnectionPoolStatus("store")
+        //displayConnectionPoolStatus("store")
         Connection connection = connectionPool.getConnection()
         PreparedStatement insert = connection.prepareStatement(UPSERT_DOCUMENT.replaceAll(/\{tableName\}/, mainTableName + "_" + doc.dataset))
         try {
@@ -160,7 +160,7 @@ class PostgreSQLStorage extends AbstractSQLStorage {
 
     boolean saveVersion(Document doc) {
         log.debug("Save version")
-        displayConnectionPoolStatus("saveVersion")
+        //displayConnectionPoolStatus("saveVersion")
         Connection connection = connectionPool.getConnection()
         PreparedStatement insvers = connection.prepareStatement(INSERT_DOCUMENT_VERSION)
         try {
@@ -189,8 +189,8 @@ class PostgreSQLStorage extends AbstractSQLStorage {
         if (!docs || docs.isEmpty()) {
             return
         }
-        log.debug("Bulk storing ${docs.size()} documents.")
-        displayConnectionPoolStatus("bulkStore")
+        log.debug("Bulk storing ${docs.size()} documents into dataset $dataset")
+        //displayConnectionPoolStatus("bulkStore")
         Connection connection = connectionPool.getConnection()
         PreparedStatement batch = connection.prepareStatement(UPSERT_DOCUMENT.replaceAll(/\{tableName\}/, mainTableName + "_" + dataset))
         PreparedStatement ver_batch = connection.prepareStatement(INSERT_DOCUMENT_VERSION)
@@ -260,7 +260,7 @@ class PostgreSQLStorage extends AbstractSQLStorage {
     private Document loadFromSql(String id, String checksum, String sql) {
         Document doc = null
         log.debug("loadFromSql $id ($sql)")
-        displayConnectionPoolStatus("loadFromSql")
+        //displayConnectionPoolStatus("loadFromSql")
         Connection connection = connectionPool.getConnection()
         //connection = DriverManager.getConnection("jdbc:postgresql://localhost/whelk")
         log.debug("Got connection.")
@@ -298,23 +298,25 @@ class PostgreSQLStorage extends AbstractSQLStorage {
 
     @Override
     List<Document> loadAllVersions(String identifier) {
-        Connection connection = connectionPool.getConnection()
-        PreparedStatement selectstmt
-        ResultSet rs
         List<Document> docList = []
-        try {
-            selectstmt = connection.prepareStatement(GET_ALL_DOCUMENT_VERSIONS)
-            selectstmt.setString(1, identifier)
-            rs = selectstmt.executeQuery()
-            int v = 0
-            while (rs.next()) {
-                def doc = whelk.createDocument(mapper.readValue(rs.getString("data"), Map), mapper.readValue(rs.getString("entry"), Map))
-                doc.version = v++
-                docList << doc
+        if (versioning) {
+            Connection connection = connectionPool.getConnection()
+            PreparedStatement selectstmt
+            ResultSet rs
+            try {
+                selectstmt = connection.prepareStatement(GET_ALL_DOCUMENT_VERSIONS)
+                selectstmt.setString(1, identifier)
+                rs = selectstmt.executeQuery()
+                int v = 0
+                while (rs.next()) {
+                    def doc = whelk.createDocument(mapper.readValue(rs.getString("data"), Map), mapper.readValue(rs.getString("entry"), Map))
+                    doc.version = v++
+                    docList << doc
+                }
+            } finally {
+                connection.close()
+                log.debug("[loadAllVersions] Closed connection.")
             }
-        } finally {
-            connection.close()
-            log.debug("[loadAllVersions] Closed connection.")
         }
         return docList
     }

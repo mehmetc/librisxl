@@ -82,15 +82,15 @@ class MarcFrameConverter extends BasicFormatConverter {
     @Override
     String getRequiredContentType() { "application/x-marc-json" }
 
-    Document doConvert(final Object record, final Map metaentry) {
+    Document doConvert(final Object record, final Map entry) {
         try {
             def source = MarcJSONConverter.toJSONMap(record)
-            def result = runConvert(source, metaentry.get(EXTRADATA_KEY))
+            def result = runConvert(source, entry.get(Document.EXTRADATA_KEY))
             log.trace("Created frame: $result")
 
-            return whelk.createDocument(getResultContentType()).withEntry(metaentry).withData(mapper.writeValueAsBytes(result))
+            return whelk.createDocument(getResultContentType()).withEntry(entry).withData(mapper.writeValueAsBytes(result))
         } catch (Exception e) {
-            log.error("Failed marc conversion (${e.message}). Metaentry: $metaentry")
+            log.error("Failed marc conversion (${e.message}). Entry: $entry")
             throw e
         }
     }

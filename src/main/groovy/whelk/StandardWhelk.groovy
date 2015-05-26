@@ -500,7 +500,7 @@ class StandardWhelk implements Whelk {
         if (camelContext) {
             Exchange exchange = createAndPrepareExchange(document.identifier, document.dataset, operation, document.contentType, (document.isJson() ? document.dataAsMap : document.data), extraInfo)
             log.trace("Sending document in message to camel regaring ${document.identifier} with operation $operation")
-            exchange.getIn().setHeader("document:metaentry", document.metadataAsJson)
+            exchange.getIn().setHeader("document:metaentry", document.entryAsJson)
             sendCamelMessage(operation, exchange)
         }
     }

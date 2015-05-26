@@ -297,7 +297,9 @@ class OaiPmhImporter extends BasicPlugin implements Importer {
 
         documentMap['record'] = record
         documentMap['entry'] = entry
-        documentMap['meta'] = meta
+        if (meta) {
+            documentMap['entry'][(Document.EXTRADATA_KEY)] = meta
+        }
         documentMap['originalIdentifier'] = originalIdentifier
 
         return documentMap
@@ -327,7 +329,7 @@ class OaiPmhImporter extends BasicPlugin implements Importer {
                 try {
                     if (marcFrameConverter) {
                         log.trace("Conversion starts.")
-                        def doc = marcFrameConverter.doConvert(it.record, ["entry":it.entry,"meta":it.meta])
+                        def doc = marcFrameConverter.doConvert(it.record, it.entry)
                         log.trace("Convestion finished.")
                         if (it.originalIdentifier) {
                             def dataMap = doc.dataAsMap

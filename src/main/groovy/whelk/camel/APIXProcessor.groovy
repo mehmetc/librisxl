@@ -173,7 +173,7 @@ class APIXProcessor extends BasicPlugin implements Processor {
     void prepareMessage(Document doc, Message docMessage) {
         log.debug("Resetting document ${doc.identifier} in message.")
         docMessage.setBody(doc.data)
-        docMessage.setHeader("document:metaentry", doc.metadataAsJson)
+        docMessage.setHeader("document:metaentry", doc.entryAsJson)
     }
 }
 
