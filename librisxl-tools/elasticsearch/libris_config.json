@@ -28,6 +28,10 @@
                     "tokenizer": "lowercase",
                     "type": "custom"
                 },
+                "default": {
+                    "tokenizer": "standard",
+                    "filter": ["lowercase", "ascii_folder", "swedish_snowball"]
+                },
                 "isbn_analyzer": {
                     "tokenizer": "standard",
                     "char_filter": [
@@ -52,6 +56,14 @@
                 }
             },
             "filter": {
+                "ascii_folder": {
+                    "type": "asciifolding",
+                    "preserve_original": true
+                },
+                "swedish_snowball": {
+                    "type": "snowball",
+                    "language": "Swedish"
+                },
                 "custom_edge_ngram": {
                     "max_gram": 50,
                     "min_gram": 2,
@@ -122,6 +134,17 @@
                     }
                 },
                 {
+                    "inner_type_template": {
+                        "mapping": {
+                            "index": true,
+                            "type": "keyword"
+                        },
+                        "match": "@type",
+                        "match_mapping_type": "string",
+                        "path_match": "*.@type"
+                    }
+                },
+                {
                     "id_template": {
                         "mapping": {
                             "index": true,
@@ -129,6 +152,17 @@
                         },
                         "match": "@id",
                         "match_mapping_type": "string"
+                    }
+                },
+                {
+                    "inner_id_template": {
+                        "mapping": {
+                            "index": true,
+                            "type": "keyword"
+                        },
+                        "match": "@id",
+                        "match_mapping_type": "string",
+                        "path_match": "*.@id"
                     }
                 },
                 {
@@ -144,7 +178,8 @@
                                     "type": "keyword"
                                 }
                             },
-                            "type": "text"
+                            "type": "text",
+                            "analyzer": "default"
                         },
                         "match": "notation",
                         "match_mapping_type": "string"
@@ -164,7 +199,8 @@
                                     "boost": 50
                                 }
                             },
-                            "type": "text"
+                            "type": "text",
+                            "analyzer": "default"
                         },
                         "match": "*Label",
                         "match_mapping_type": "string"
@@ -200,7 +236,8 @@
                                     "type": "text"
                                 }
                             },
-                            "type": "text"
+                            "type": "text",
+                            "analyzer": "default"
                         },
                         "match": "*Scheme",
                         "match_mapping_type": "string"
@@ -217,7 +254,8 @@
                                 "{name}": {
                                     "index": true,
                                     "type": "text",
-                                    "boost": 50
+                                    "boost": 50,
+                                    "analyzer": "default"
                                 }
                             },
                             "type": "text"
@@ -240,7 +278,8 @@
                                     "boost": 50
                                 }
                             },
-                            "type": "text"
+                            "type": "text",
+                            "analyzer": "default"
                         },
                         "match": "*Value",
                         "match_mapping_type": "string"
@@ -260,7 +299,8 @@
                                     "boost": 50
                                 }
                             },
-                            "type": "text"
+                            "type": "text",
+                            "analyzer": "default"
                         },
                         "match": "*title*",
                         "match_mapping_type": "string"
@@ -283,13 +323,31 @@
                         "match_mapping_type": "string",
                         "path_match": "unknown.*.subfields.*"
                     }
+                },
+                {
+                    "string_template": {
+                        "mapping": {
+                            "fields": {
+                                "raw": {
+                                    "index": "true",
+                                    "type": "keyword"
+                                },
+                                "{name}": {
+                                    "index": "true",
+                                    "type": "text",
+                                    "analyzer": "default"
+                                }
+                            }
+                        },
+                        "match_mapping_type": "string"
+                    }
                 }
             ]
         },
         "auth": {
             "properties": {
                 "altLabel": {
-                    "analyzer": "completer",
+                    "analyzer": "default",
                     "type": "text"
                 },
                 "closeMatch": {
@@ -297,7 +355,7 @@
                         "inScheme": {
                             "properties": {
                                 "prefLabel": {
-                                    "analyzer": "completer",
+                                    "analyzer": "default",
                                     "type": "text"
                                 }
                             }
@@ -305,41 +363,41 @@
                     }
                 },
                 "controlledLabel": {
-                    "analyzer": "completer",
+                    "analyzer": "default",
                     "type": "text",
                     "boost": 5
                 },
                 "familyName": {
-                    "analyzer": "completer",
+                    "analyzer": "default",
                     "type": "text"
                 },
                 "givenName": {
-                    "analyzer": "completer",
+                    "analyzer": "default",
                     "type": "text"
                 },
                 "hiddenLabel": {
-                    "analyzer": "completer",
+                    "analyzer": "default",
                     "type": "text"
                 },
                 "label": {
-                    "analyzer": "completer",
+                    "analyzer": "default",
                     "type": "text",
                     "boost": 2
                 },
                 "name": {
-                    "analyzer": "completer",
+                    "analyzer": "default",
                     "type": "text",
                     "boost": 10
                 },
                 "prefLabel": {
-                    "analyzer": "completer",
+                    "analyzer": "default",
                     "type": "text",
                     "boost": 10
                 },
                 "sameAs": {
                     "properties": {
                         "controlledLabel": {
-                            "analyzer": "completer",
+                            "analyzer": "default",
                             "type": "text",
                             "fields": {
                                 "raw": {
@@ -373,7 +431,7 @@
                 "attributedTo": {
                     "properties": {
                         "controlledLabel": {
-                            "analyzer": "completer",
+                            "analyzer": "default",
                             "type": "text",
                             "fields": {
                                 "raw": {
@@ -387,7 +445,7 @@
                 "influencedBy": {
                     "properties": {
                         "controlledLabel": {
-                            "analyzer": "completer",
+                            "analyzer": "default",
                             "type": "text",
                             "fields": {
                                 "raw": {
