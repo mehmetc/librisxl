@@ -98,7 +98,7 @@ class XL
         }
         else if (duplicateIDs.size() == 1) // Enrich ("merge") or replace
         {
-            if (collection.equals("bib"))
+            if (collection.equals("bib") && !m_parameters.getOnlyNewBib())
             {
                 if ( m_parameters.getReplaceBib() )
                 {

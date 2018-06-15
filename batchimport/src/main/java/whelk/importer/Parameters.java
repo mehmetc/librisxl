@@ -23,6 +23,7 @@ class Parameters
     private boolean verbose = false;
     private boolean replaceHold = false;
     private boolean replaceBib = false;
+    private boolean onlynewBib = false;
 
     Path getPath() { return path; }
     INPUT_FORMAT getFormat() { return format; }
@@ -35,6 +36,7 @@ class Parameters
     boolean getVerbose() { return verbose; }
     boolean getReplaceHold() { return replaceHold; }
     boolean getReplaceBib() { return replaceBib; }
+    boolean getOnlyNewBib() { return onlynewBib; }
 
     enum INPUT_FORMAT
     {
@@ -147,6 +149,8 @@ class Parameters
         System.err.println("--replaceBib  If this flag is set, bibliographic records will be replaced instead of merged.");
         System.err.println("");
         System.err.println("--replaceHold If this flag is set, holding records will be replaced instead of merged.");
+        System.err.println("");
+        System.err.println("--onlynewBib  Import only new bibliographic records.");
     }
 
     private void interpretBinaryParameter(String parameter, String value)
@@ -232,6 +236,9 @@ class Parameters
                 break;
             case "--replaceBib":
                 replaceBib = true;
+                break;
+            case "--onlynewBib":
+                onlynewBib = true;
                 break;
             default:
                 throw new IllegalArgumentException(parameter);
