@@ -98,19 +98,21 @@ class XL
         }
         else if (duplicateIDs.size() == 1) // Enrich ("merge") or replace
         {
-            if (collection.equals("bib") && !m_parameters.getOnlyNewBib())
+            if (collection.equals("bib"))
             {
-                if ( m_parameters.getReplaceBib() )
-                {
-                    String idToReplace = duplicateIDs.iterator().next();
-                    resultingResourceId = importNewRecord(incomingMarcRecord, collection, relatedWithBibResourceId, idToReplace);
-                    importedBibRecords.inc();
-                }
-                else // Merge bib
-                {
-                    resultingResourceId = enrichRecord((String) duplicateIDs.toArray()[0], incomingMarcRecord, collection, relatedWithBibResourceId);
-                    enrichedBibRecords.inc();
-                }
+		if ( !m_parameters.getOnlyNewBib()) {
+                	if ( m_parameters.getReplaceBib() )
+                	{
+                    		String idToReplace = duplicateIDs.iterator().next();
+                    		resultingResourceId = importNewRecord(incomingMarcRecord, collection, relatedWithBibResourceId, idToReplace);
+                    		importedBibRecords.inc();
+                	}
+                	else // Merge bib
+                	{
+                    		resultingResourceId = enrichRecord((String) duplicateIDs.toArray()[0], incomingMarcRecord, collection, relatedWithBibResourceId);
+                    		enrichedBibRecords.inc();
+                	}
+		}
             }
             else // collection = hold
             {
