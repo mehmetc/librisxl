@@ -245,6 +245,14 @@ class Whelk {
             }
         }
 
+        // Check for duplicate controlNumber
+        // NOTE: control number should have been replaced earlier, but we keep this check to be sure.
+        String controlNumber = document.getControlNumber()
+        Document existingDoc = storage.getDocumentByControlNumber(controlNumber)
+        if (existingDoc) {
+            collidingSystemIDs.add(new Tuple2(document.getShortId(), "Reuse of existing control number: ${controlNumber}"))
+        }
+
         return collidingSystemIDs
     }
 

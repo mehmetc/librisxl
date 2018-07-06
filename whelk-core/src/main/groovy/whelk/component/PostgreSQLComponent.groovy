@@ -73,6 +73,7 @@ class PostgreSQLComponent {
     protected String FIND_BY, COUNT_BY
     protected String GET_SYSTEMID_BY_IRI
     protected String GET_DOCUMENT_BY_IRI
+    protected String GET_DOCUMENT_BY_CONTORL_NUMBER
     protected String GET_MINMAX_MODIFIED
     protected String UPDATE_MINMAX_MODIFIED
     protected String GET_LEGACY_PROFILE
@@ -241,6 +242,7 @@ class PostgreSQLComponent {
 
         GET_SYSTEMID_BY_IRI = "SELECT id FROM $idTableName WHERE iri = ?"
         GET_DOCUMENT_BY_IRI = "SELECT data FROM lddb INNER JOIN lddb__identifiers ON lddb.id = lddb__identifiers.id WHERE lddb__identifiers.iri = ?"
+        GET_DOCUMENT_BY_CONTORL_NUMBER = "SELECT data FROM lddb WHERE data #>> '{@graph,0,controlNumber}' = ?"
 
         GET_LEGACY_PROFILE = "SELECT profile FROM $profilesTableName WHERE library_id = ?"
      }
@@ -692,16 +694,31 @@ class PostgreSQLComponent {
         HashSet<String> missingIDs = new HashSet<>()
         missingIDs.addAll( oldIDs )
         missingIDs.removeAll( newIDs )
-        if ( ! missingIDs.isEmpty() )
-            throw new RuntimeException("An update of " + preUpdateDoc.getCompleteId() + " MUST contain all URIs pertaining to the original record and its main entity and their sameAs-es. Missing URIs: " + missingIDs)
+        if ( ! missingIDs.isEmpty() ) {
+            throw new StorageCreateFailedException("An update of " + preUpdateDoc.getCompleteId() +
+                " MUST contain all URIs pertaining to the original record and its main entity and their sameAs-es. " +
+                "Missing URIs: " + missingIDs)
+        }
 
         // Are any of the added IDs already in use?
         HashSet<String> addedIDs = new HashSet<>()
         addedIDs.addAll( newIDs )
         addedIDs.removeAll( oldIDs )
         for (String id : addedIDs) {
-            if ( getSystemIdByIri(id) != null )
-                throw new RuntimeException("An update of " + preUpdateDoc.getCompleteId() + " MUST NOT have URIs that are already in use for other records. The update contained an offending URI: " + id)
+            if ( getSystemIdByIri(id) != null ) {
+                throw new StorageCreateFailedException("An update of " + preUpdateDoc.getCompleteId() +
+                    " MUST NOT have URIs that are already in use for other records. " +
+                    "The update contained an offending URI: " + id)
+            }
+        }
+
+        // Has the controlnumber been changed?
+        String oldCN = preUpdateDoc.getControlNumber()
+        String newCN = postUpdateDoc.getControlNumber()
+		log.warn("old: ${oldCN}, new: ${newCN}")
+
+        if (oldCN != newCN) {
+            throw new StorageCreateFailedException("An update of ${preUpdateDoc.getCompleteId()} MUST NOT change controlNumber")
         }
 
         // We're ok.
@@ -1518,6 +1535,35 @@ class PostgreSQLComponent {
         try {
             preparedStatement = connection.prepareStatement(GET_DOCUMENT_BY_IRI)
             preparedStatement.setString(1, iri)
+            rs = preparedStatement.executeQuery()
+            if (rs.next())
+                return new Document(mapper.readValue(rs.getString("data"), Map))
+            return null
+        }
+        finally {
+            if (rs != null)
+                rs.close()
+            if (preparedStatement != null)
+                preparedStatement.close()
+        }
+    }
+
+    Document getDocumentByControlNumber(String controlNumber) {
+        Connection connection = getConnection()
+        try {
+            return getDocumentByControlNumber(controlNumber, connection)
+        } finally {
+            if (connection != null)
+                connection.close()
+        }
+    }
+
+    Document getDocumentByControlNumber(String controlNumber, Connection connection) {
+        PreparedStatement preparedStatement
+        ResultSet rs
+        try {
+            preparedStatement = connection.prepareStatement(GET_DOCUMENT_BY_CONTORL_NUMBER)
+            preparedStatement.setString(1, controlNumber)
             rs = preparedStatement.executeQuery()
             if (rs.next())
                 return new Document(mapper.readValue(rs.getString("data"), Map))
