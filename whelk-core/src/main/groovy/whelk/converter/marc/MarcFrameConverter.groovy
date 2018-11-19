@@ -2258,6 +2258,7 @@ class MarcFieldHandler extends BaseMarcFieldHandler {
         // NOTE: Within a field, only *one* positioned term is supported.
         Map firstRelPosSubfield = null
         Map sortedByItemPos = [:]
+        Set succeededCodes = new HashSet()
 
         orderedAndGroupedSubfields.each { subhandlers ->
 
@@ -2344,16 +2345,20 @@ class MarcFieldHandler extends BaseMarcFieldHandler {
                             }
                         }
                     }
-                    if (subhandler.required && !justAdded) {
+                    if (subhandler.required && !justAdded
+                        && !(code in succeededCodes)) {
                         failedRequired = true
                     }
                 } else {
-                    if (subhandler.required || subhandler.requiresI1 || subhandler.requiresI2) {
+                    if ((subhandler.required || subhandler.requiresI1 ||
+                                subhandler.requiresI2)
+                        && !(code in succeededCodes)) {
                         failedRequired = true
                     }
                 }
                 if (!failedRequired && justAdded) {
                     usedEntities << selectedEntity
+                    succeededCodes << code
                     if (prevAdded && justAdded && subhandler.leadingPunctuation) {
                         def (prevCode, prevSub) = prevAdded
                         MarcSubFieldHandler prevSubHandler = subfields[prevCode]
